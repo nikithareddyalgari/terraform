@@ -1,0 +1,87 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- main
+
+stages:
+  - stage: Build
+    jobs:
+      - job: buildterraform
+
+        pool:
+          vmImage: ubuntu-latest
+
+        steps:
+        ##CopyBuildFiles
+        - task: CopyFiles@2
+          inputs:
+            SourceFolder: 'terraformscripts'
+            Contents: '**.tf**'
+            TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+        ##PublishBuildArtifacts
+        - task: PublishBuildArtifacts@1
+          inputs:
+            PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+            ArtifactName: 'drop'
+            publishLocation: 'Container'
+
+  - stage: Release
+    dependsOn: Build
+    jobs:
+      - deployment: 
+        pool:
+          vmImage: ubuntu-latest
+        environment: 'dev'
+        strategy:
+         runOnce:
+           deploy:
+            steps:              
+
+
+    ##Download Artifacts
+            - task: DownloadPipelineArtifact@2
+              inputs:
+                buildType: 'current'
+                artifactName: 'drop'
+                itemPattern: '**'
+                targetPath: '$(Build.SourcesDirectory)/drop'
+              
+    #Terraform install
+            - task: TerraformInstaller@0
+              inputs:
+                terraformVersion: 'latest'
+
+    ##Terraform Init
+            - task: TerraformTaskV3@3
+              displayName: 'Terraform Init'
+              inputs:
+                provider: 'azurerm'
+                command: 'init'
+                workingDirectory: '$(Build.SourcesDirectory)/drop'
+                backendServiceArm: 'terraform-azuredevops'
+                backendAzureRmResourceGroupName: 'myrg1'
+                backendAzureRmStorageAccountName: 'terraformstorage00eus'
+                backendAzureRmContainerName: 'terraform'
+                backendAzureRmKey: 'dev.tfstate'
+
+    ##Terraform Plan
+            - task: TerraformTaskV3@3
+              displayName: Terraform Plan
+              inputs:
+                provider: 'azurerm'
+                command: 'plan'
+                workingDirectory: '$(Build.SourcesDirectory)/drop'
+                environmentServiceNameAzureRM: 'terraform-azuredevops'
+
+    ##Terraform Apply
+            - task: TerraformTaskV3@3
+              displayName: Terraform Apply
+              inputs:
+                provider: 'azurerm'
+                command: 'apply'
+                workingDirectory: '$(Build.SourcesDirectory)/drop'
+                environmentServiceNameAzureRM: 'terraform-azuredevops'
